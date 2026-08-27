@@ -258,6 +258,75 @@
   }
 
   // ---------------------------------------------------------------------
+  // Client-side decryption fallback.
+  // Vercel rejects request bodies over ~4.5 MB before the server sees them,
+  // but .enc files hold uncompressed pixels and easily exceed that. Decryption
+  // is just P = K^-1 * C mod 256 — the browser can do it locally on files of
+  // any size, no upload required. Server decryption remains the primary path
+  // for normal-sized files (and the curl API).
+  // ---------------------------------------------------------------------
+
+  const HOSTED_REQUEST_CAP = 4.3 * 1024 * 1024;
+  const IS_LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const FORCE_CLIENT_DECRYPT = new URLSearchParams(location.search).has('forceClientDecrypt');
+
+  const mod256 = (n) => ((n % 256) + 256) % 256;
+
+  function modularInverse256(a) {
+    a = mod256(a);
+    let [oldR, r] = [a, 256];
+    let [oldS, s] = [1, 0];
+    while (r !== 0) {
+      const q = Math.floor(oldR / r);
+      [oldR, r] = [r, oldR - q * r];
+      [oldS, s] = [s, oldS - q * s];
+    }
+    return oldR === 1 ? ((oldS % 256) + 256) % 256 : null;
+  }
+
+  /** K^-1 = det(K)^-1 * adj(K) mod 256 — mirror of the server implementation. */
+  function invertKeyMatrix(k) {
+    const det = mod256(k[0][0] * k[1][1] - k[0][1] * k[1][0]);
+    const detInv = modularInverse256(det);
+    if (detInv === null) throw new Error('Key matrix not invertible (should be impossible)');
+    return [
+      [mod256(k[1][1] * detInv), mod256(-k[0][1] * detInv)],
+      [mod256(-k[1][0] * detInv), mod256(k[0][0] * detInv)],
+    ];
+  }
+
+  async function clientDecrypt(password) {
+    const { width, height, format, ciphertext } = state.encMeta;
+    const key = await deriveKeyMatrix(password);
+    if (!key) throw new Error('This browser does not support the required crypto APIs');
+    const [[a, b], [c, d]] = invertKeyMatrix(key);
+
+    const px = width * height;
+    const padded = Math.ceil(px / 2) * 2;
+    const out = new Uint8ClampedArray(px * 4);
+
+    for (let ch = 0; ch < 3; ch++) {
+      const base = ch * padded;
+      for (let i = 0; i < padded; i += 2) {
+        const c0 = ciphertext[base + i];
+        const c1 = ciphertext[base + i + 1];
+        if (i < px) out[i * 4 + ch] = (a * c0 + b * c1) % 256;
+        if (i + 1 < px) out[(i + 1) * 4 + ch] = (c * c0 + d * c1) % 256;
+      }
+    }
+    for (let i = 0; i < px; i++) out[i * 4 + 3] = 255;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').putImageData(new ImageData(out, width, height), 0, 0);
+    const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
+    if (!blob) throw new Error('Could not encode the decrypted image');
+    return blob;
+  }
+
+  // ---------------------------------------------------------------------
   // Noise heuristic — was that password right?
   // The Hill cipher has no integrity check: a wrong key "succeeds" but
   // produces noise. The standard discriminator from the image-encryption
@@ -352,23 +421,41 @@
     const keyMatrix = await deriveKeyMatrix(password);
     document.dispatchEvent(new CustomEvent('cipher:start', { detail: { mode, keyMatrix } }));
 
-    const form = new FormData();
-    form.append(mode === 'encrypt' ? 'image' : 'file', file);
-    form.append('password', password);
+    // Files above the hosted request cap can't reach the server on Vercel —
+    // decrypt those right here in the browser instead of a doomed upload.
+    const useClient =
+      mode === 'decrypt' &&
+      state.encMeta &&
+      (FORCE_CLIENT_DECRYPT || (!IS_LOCAL && file.size > HOSTED_REQUEST_CAP));
 
-    const request = fetch(`/api/${mode}`, { method: 'POST', body: form }).then(async (res) => {
-      if (!res.ok) {
-        let message = `Request failed (${res.status})`;
-        try {
-          const body = await res.json();
-          if (body.error) message = body.error;
-        } catch { /* non-JSON error body */ }
-        throw new Error(message);
-      }
-      return res.blob();
-    });
+    if (useClient) {
+      await typeLine('file exceeds the hosted upload cap — decrypting in-browser, zero upload', {
+        cls: 'terminal-ok',
+      });
+    }
 
-    // Let the terminal choreography finish even if the server returns first
+    const request = useClient
+      ? clientDecrypt(password)
+      : (() => {
+          const form = new FormData();
+          form.append(mode === 'encrypt' ? 'image' : 'file', file);
+          form.append('password', password);
+          return fetch(`/api/${mode}`, { method: 'POST', body: form }).then(async (res) => {
+            if (!res.ok) {
+              let message = `Request failed (${res.status})`;
+              try {
+                const body = await res.json();
+                if (body.error) message = body.error;
+              } catch {
+                if (res.status === 413) message = 'File too large for the hosted server (~4.5 MB request cap)';
+              }
+              throw new Error(message);
+            }
+            return res.blob();
+          });
+        })();
+
+    // Let the terminal choreography finish even if the work returns first
     // — and never gate the real result on animation more than ~2.5s.
     const script = playStatusScript(mode, 260);
 
@@ -377,10 +464,24 @@
       [blob] = await Promise.all([request, script]);
     } catch (err) {
       await script.catch(() => {});
-      await typeLine(`ERROR: ${err.message}`, { cls: 'terminal-error' });
-      showError(err.message);
-      finishRun(mode);
-      return;
+      // Server said the upload is too big (Vercel platform cap) but we can
+      // still finish the job locally in the browser.
+      if (mode === 'decrypt' && state.encMeta && /413|too large/i.test(err.message)) {
+        await typeLine('server rejected the upload — retrying in-browser...', { cls: 'terminal-ok' });
+        try {
+          blob = await clientDecrypt(password);
+        } catch (err2) {
+          await typeLine(`ERROR: ${err2.message}`, { cls: 'terminal-error' });
+          showError(err2.message);
+          finishRun(mode);
+          return;
+        }
+      } else {
+        await typeLine(`ERROR: ${err.message}`, { cls: 'terminal-error' });
+        showError(err.message);
+        finishRun(mode);
+        return;
+      }
     }
 
     await typeLine(mode === 'encrypt' ? 'done. ciphertext ready.' : 'done. image reconstructed.', {
