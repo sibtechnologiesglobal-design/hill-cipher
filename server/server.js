@@ -36,7 +36,8 @@ app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       status = 413;
-      message = 'File too large (maximum 4 MB)';
+      const limit = req.baseUrl === '/api/decrypt' ? '50 MB' : '4 MB';
+      message = `File too large (maximum ${limit})`;
     } else {
       status = 400;
       message = `Upload error: ${err.message}`;

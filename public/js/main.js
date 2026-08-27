@@ -14,7 +14,9 @@
 
 (() => {
   const $ = (sel) => document.querySelector(sel);
-  const MAX_BYTES = 4 * 1024 * 1024;
+  // Encrypt uploads stay under Vercel's ~4.5 MB request cap; .enc files are
+  // uncompressed and can be much larger (fully supported when running locally).
+  const MAX_BYTES = { encrypt: 4 * 1024 * 1024, decrypt: 50 * 1024 * 1024 };
   const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/tiff', 'image/avif'];
 
   const state = {
@@ -163,7 +165,9 @@
   }
 
   function validateFile(file, mode) {
-    if (file.size > MAX_BYTES) return 'File exceeds the 4 MB limit';
+    if (file.size > MAX_BYTES[mode]) {
+      return `File exceeds the ${mode === 'encrypt' ? '4' : '50'} MB limit`;
+    }
     if (mode === 'encrypt') {
       if (!IMAGE_TYPES.includes(file.type)) return 'Only image files can be encrypted (png, jpeg, webp, gif, tiff, avif)';
     } else if (!file.name.toLowerCase().endsWith('.enc')) {

@@ -7,9 +7,13 @@ const { decryptEnc } = require('../lib/imageProcessor');
 
 const router = express.Router();
 
+// .enc files hold uncompressed pixel data, so they're often much larger than
+// the source image — allow up to 50 MB here. Note: on Vercel the platform
+// itself caps request bodies at ~4.5 MB before this limit is ever consulted;
+// larger files work when running locally.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 4 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 },
   fileFilter(req, file, cb) {
     const ext = path.extname(file.originalname || '').toLowerCase();
     if (ext !== '.enc') {

@@ -121,8 +121,13 @@ curl -o photo.enc \
 
 | Field      | Type   | Notes                    |
 |------------|--------|--------------------------|
-| `file`     | file   | a `.enc` file, ≤4 MB     |
+| `file`     | file   | a `.enc` file, ≤50 MB    |
 | `password` | string | required                 |
+
+> `.enc` files hold uncompressed pixel data, so they are usually larger than
+> the source image — hence the higher decrypt limit. On the hosted (Vercel)
+> version, the platform rejects request bodies above ~4.5 MB regardless of
+> this limit; larger `.enc` files decrypt fine when running locally.
 
 ```bash
 curl -o photo.png \
@@ -222,8 +227,10 @@ Notes:
   lossy format the decrypted file is re-encoded (jpeg → jpeg), so the *file* isn't
   byte-identical to the original even though the decrypted pixels are.
 - **Alpha channels are dropped** — the cipher operates on R, G, B only.
-- 4 MB upload limit (matches Vercel Hobby's request body cap); large images cost
-  memory since processing is in-RAM.
+- 4 MB image upload limit (matches Vercel Hobby's ~4.5 MB request body cap);
+  decrypt accepts `.enc` files up to 50 MB, but on the hosted version Vercel's
+  platform cap still applies — big files are a local-mode feature. Processing
+  is in-RAM, so very large files cost memory.
 - The encryption history lists filename/size/time for everyone — there's no auth
   or per-user scoping. Encrypted blobs sit in a private bucket and are never
   exposed through the API, but don't treat filenames as secrets.

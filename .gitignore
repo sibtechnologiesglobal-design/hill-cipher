@@ -5,3 +5,4 @@ public/vendor/
 .vercel
 .DS_Store
 *.log
+.env*
