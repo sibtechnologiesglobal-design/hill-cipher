@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HILL//CIPHER — Image Encryption via Linear Algebra</title>
+  <meta name="description" content="Encrypt and decrypt images with the Hill cipher: 2x2 key matrices, modular arithmetic, and pure linear algebra." />
+  <link rel="stylesheet" href="/vendor/aos/aos.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>&#128274;</text></svg>" />
+</head>
+<body>
+  <canvas id="matrix-rain" aria-hidden="true"></canvas>
+  <div class="cursor-dot" aria-hidden="true"></div>
+  <div class="cursor-ring" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="logo magnetic" href="#hero">HILL<span class="logo-slash">//</span>CIPHER</a>
+    <nav>
+      <a class="nav-link magnetic" href="#app">Cipher</a>
+      <a class="nav-link magnetic" href="#how">How it works</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ================= HERO ================= -->
+    <section id="hero">
+      <div class="hero-content">
+        <p class="hero-kicker mono">// image encryption via linear algebra</p>
+        <h1 id="hero-title">YOUR PIXELS,<br /><span class="accent">SCRAMBLED BY A MATRIX</span></h1>
+        <p class="hero-tagline mono"><span id="typed-tagline"></span><span class="typed-fallback">Every pixel pair multiplied by a 2&times;2 key matrix, mod 256.</span></p>
+
+        <div class="hero-matrix mono" id="hero-matrix" aria-label="A 2 by 2 key matrix">
+          <span class="matrix-label">K&nbsp;=</span>
+          <span class="matrix-bracket">[</span>
+          <span class="matrix-grid">
+            <span class="matrix-cell" data-cell="0">173</span>
+            <span class="matrix-cell" data-cell="1">42</span>
+            <span class="matrix-cell" data-cell="2">89</span>
+            <span class="matrix-cell" data-cell="3">211</span>
+          </span>
+          <span class="matrix-bracket">]</span>
+          <span class="matrix-note">det(K) &equiv; odd &nbsp;&rArr;&nbsp; invertible mod 256</span>
+        </div>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary magnetic" href="#app">▸ LAUNCH CIPHER</a>
+          <a class="btn btn-ghost magnetic" href="#how">read the math</a>
+        </div>
+      </div>
+      <div class="scroll-hint mono" aria-hidden="true">scroll<span class="scroll-hint-bar"></span></div>
+    </section>
+
+    <!-- ================= APP ================= -->
+    <section id="app">
+      <div class="panel-shell">
+        <div class="panel-chrome mono">
+          <span class="chrome-dot red"></span><span class="chrome-dot yellow"></span><span class="chrome-dot green"></span>
+          <span class="chrome-title">hill-cipher — zsh — 80&times;24</span>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active magnetic" id="tab-encrypt" role="tab" aria-selected="true" data-mode="encrypt">⊕ ENCRYPT</button>
+          <button class="tab magnetic" id="tab-decrypt" role="tab" aria-selected="false" data-mode="decrypt">⊖ DECRYPT</button>
+        </div>
+
+        <!-- Encrypt panel -->
+        <div class="tab-panel active" id="panel-encrypt" role="tabpanel">
+          <div class="dropzone" id="dropzone-encrypt" tabindex="0">
+            <input type="file" id="file-encrypt" accept="image/png,image/jpeg,image/webp,image/gif,image/tiff,image/avif" hidden />
+            <div class="dropzone-idle">
+              <div class="dropzone-icon mono">[ ▦ ]</div>
+              <p>Drop an image here, or <span class="accent">click to browse</span></p>
+              <p class="dropzone-hint mono">png · jpeg · webp · gif · tiff — max 4 MB</p>
+            </div>
+            <div class="dropzone-preview" hidden>
+              <img id="preview-encrypt" alt="Selected image preview" />
+              <p class="file-meta mono" id="meta-encrypt"></p>
+            </div>
+          </div>
+          <div class="controls">
+            <div class="password-wrap">
+              <label class="mono" for="password-encrypt">password&gt;</label>
+              <input type="password" id="password-encrypt" autocomplete="new-password" placeholder="••••••••" />
+            </div>
+            <button class="btn btn-primary btn-run magnetic" id="run-encrypt" disabled>ENCRYPT ▸</button>
+          </div>
+        </div>
+
+        <!-- Decrypt panel -->
+        <div class="tab-panel" id="panel-decrypt" role="tabpanel" hidden>
+          <div class="dropzone" id="dropzone-decrypt" tabindex="0">
+            <input type="file" id="file-decrypt" accept=".enc" hidden />
+            <div class="dropzone-idle">
+              <div class="dropzone-icon mono">[ ▩ ]</div>
+              <p>Drop a <span class="accent">.enc</span> file here, or <span class="accent">click to browse</span></p>
+              <p class="dropzone-hint mono">files produced by this tool — max 4 MB</p>
+            </div>
+            <div class="dropzone-preview" hidden>
+              <canvas id="preview-decrypt" width="0" height="0" aria-label="Encrypted data visualization"></canvas>
+              <p class="file-meta mono" id="meta-decrypt"></p>
+            </div>
+          </div>
+          <div class="controls">
+            <div class="password-wrap">
+              <label class="mono" for="password-decrypt">password&gt;</label>
+              <input type="password" id="password-decrypt" autocomplete="off" placeholder="••••••••" />
+            </div>
+            <button class="btn btn-primary btn-run magnetic" id="run-decrypt" disabled>DECRYPT ▸</button>
+          </div>
+        </div>
+
+        <!-- Terminal log -->
+        <div class="terminal mono" id="terminal" hidden aria-live="polite">
+          <div class="terminal-lines" id="terminal-lines"></div>
+        </div>
+
+        <!-- Cipher visualization overlay -->
+        <div class="cipher-stage mono" id="cipher-stage" hidden aria-hidden="true">
+          <div class="stage-item stage-key">
+            <div class="stage-caption">key matrix K</div>
+            <div class="mini-matrix" id="stage-key-matrix">
+              <span>?</span><span>?</span><span>?</span><span>?</span>
+            </div>
+          </div>
+          <div class="stage-item stage-op">×</div>
+          <div class="stage-item stage-block">
+            <div class="stage-caption">pixel block P</div>
+            <div class="mini-vector" id="stage-pixel-block"><span>?</span><span>?</span></div>
+          </div>
+          <div class="stage-item stage-op">mod&nbsp;256</div>
+          <div class="stage-item stage-arrow">⟶</div>
+          <div class="stage-item stage-out">
+            <div class="stage-caption" id="stage-out-caption">ciphertext C</div>
+            <div class="mini-vector scrambled" id="stage-out-block"><span>?</span><span>?</span></div>
+          </div>
+        </div>
+
+        <!-- Error banner -->
+        <div class="error-banner mono" id="error-banner" hidden role="alert">
+          <span class="error-glyph">✖</span>
+          <span id="error-text"></span>
+        </div>
+
+        <!-- Encrypt result -->
+        <div class="result" id="result-encrypt" hidden>
+          <h3 class="result-title mono" id="enc-result-title">ENCRYPTION COMPLETE</h3>
+          <div class="result-body">
+            <div class="enc-artifact">
+              <canvas id="enc-noise-canvas" aria-label="Visualization of the encrypted bytes"></canvas>
+              <p class="file-meta mono" id="enc-result-meta"></p>
+            </div>
+            <div class="result-actions">
+              <p class="result-note">This is your image after <span class="mono accent">C = K·P mod 256</span>. Pure noise without the key.</p>
+              <a class="btn btn-primary magnetic" id="download-encrypt" download>▼ DOWNLOAD .enc</a>
+              <button class="btn btn-ghost magnetic" id="reset-encrypt">encrypt another</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Decrypt result -->
+        <div class="result" id="result-decrypt" hidden>
+          <h3 class="result-title mono" id="dec-result-title">DECRYPTION COMPLETE</h3>
+          <div class="result-body">
+            <div class="compare-wrap" id="compare-wrap">
+              <div class="compare" id="compare">
+                <canvas class="compare-before" id="compare-before" aria-label="Encrypted noise"></canvas>
+                <div class="compare-after-clip" id="compare-after-clip">
+                  <img class="compare-after" id="compare-after" alt="Decrypted image" />
+                </div>
+                <div class="compare-handle" id="compare-handle" role="slider" aria-label="Drag to compare encrypted and decrypted" tabindex="0">
+                  <span class="handle-bar"></span><span class="handle-grip mono">◂▸</span>
+                </div>
+                <span class="compare-tag tag-before mono">ENCRYPTED</span>
+                <span class="compare-tag tag-after mono">DECRYPTED</span>
+              </div>
+              <p class="compare-hint mono">drag to compare</p>
+            </div>
+            <div class="result-actions">
+              <p class="result-note" id="dec-result-note">Recovered with <span class="mono accent">P = K⁻¹·C mod 256</span>.</p>
+              <a class="btn btn-primary magnetic" id="download-decrypt" download>▼ DOWNLOAD IMAGE</a>
+              <button class="btn btn-ghost magnetic" id="reset-decrypt">decrypt another</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= RECENT ENCRYPTIONS ================= -->
+    <section id="history" hidden>
+      <div class="history-shell">
+        <h3 class="history-title mono"><span class="accent">//</span> RECENT ENCRYPTIONS <span class="history-sub">persisted in Supabase Storage</span></h3>
+        <ul class="history-list mono" id="history-list"></ul>
+      </div>
+    </section>
+
+    <!-- ================= HOW IT WORKS ================= -->
+    <section id="how">
+      <h2 class="section-title" data-aos="fade-up"><span class="mono accent">//</span> HOW IT WORKS</h2>
+
+      <div class="how-grid">
+        <article class="how-card" data-aos="fade-up" data-aos-delay="0">
+          <div class="how-step mono">01</div>
+          <h3>Password → Key Matrix</h3>
+          <p>Your password is hashed with <span class="mono">SHA-256</span>. The first four bytes of the digest seed a 2&times;2 matrix <span class="mono">K</span>. We force <span class="mono">a</span> and <span class="mono">d</span> odd and <span class="mono">b</span> even, so <span class="mono">det(K) = ad − bc</span> is always odd — and any odd number is coprime with 256, guaranteeing <span class="mono">K</span> is invertible.</p>
+          <div class="how-math mono">SHA-256(pw) → [a b; c d],&nbsp; det ≡ 1 (mod 2)</div>
+        </article>
+
+        <article class="how-card" data-aos="fade-up" data-aos-delay="100">
+          <div class="how-step mono">02</div>
+          <h3>Encrypt: C = K·P mod 256</h3>
+          <p>The image is decoded to raw R, G, B channels. Each channel is padded to even length and split into 2&times;1 pixel blocks. Every block is multiplied by <span class="mono">K</span> and reduced mod 256 — one linear transformation per pair of pixels, and the picture becomes statistical noise.</p>
+          <div class="how-math mono">[c₀; c₁] = K · [p₀; p₁] mod 256</div>
+        </article>
+
+        <article class="how-card" data-aos="fade-up" data-aos-delay="200">
+          <div class="how-step mono">03</div>
+          <h3>Decrypt: P = K⁻¹·C mod 256</h3>
+          <p>Inversion uses the adjugate: <span class="mono">K⁻¹ = det(K)⁻¹ · [d −b; −c a]</span>, where <span class="mono">det(K)⁻¹</span> is the modular inverse found with the extended Euclidean algorithm. The same password rebuilds the exact same <span class="mono">K</span> — the wrong password builds a different matrix and yields pure noise.</p>
+          <div class="how-math mono">K⁻¹ = det⁻¹ · adj(K) mod 256</div>
+        </article>
+
+        <article class="how-card" data-aos="fade-up" data-aos-delay="300">
+          <div class="how-step mono">04</div>
+          <h3>The .enc container</h3>
+          <p>Ciphertext travels in a tiny custom binary format — a 4-byte magic <span class="mono">"ENC1"</span>, the image width, height and original format, then the encrypted channel data. Requests are processed entirely in memory; only the encrypted output and its metadata are archived — never your password, the key, or the original image.</p>
+          <div class="how-math mono">ENC1 | w:u32 | h:u32 | fmt | ciphertext</div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="site-footer mono">
+      <span>HILL//CIPHER — a linear algebra term project</span>
+      <span class="accent">det(K) ≡ 1 (mod 2)</span>
+    </footer>
+  </main>
+
+  <script src="/vendor/gsap/gsap.min.js" defer></script>
+  <script src="/vendor/gsap/ScrollTrigger.min.js" defer></script>
+  <script src="/vendor/lenis/lenis.min.js" defer></script>
+  <script src="/vendor/canvas-confetti/confetti.browser.js" defer></script>
+  <script src="/vendor/aos/aos.js" defer></script>
+  <script src="/vendor/typed.js/typed.umd.js" defer></script>
+  <script src="/vendor/split-type/index.min.js" defer></script>
+  <script src="/js/matrixRain.js" defer></script>
+  <script src="/js/main.js" defer></script>
+  <script src="/js/animations.js" defer></script>
+</body>
+</html>

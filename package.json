@@ -1,0 +1,25 @@
+{
+  "name": "hill-cipher-app",
+  "version": "1.0.0",
+  "description": "Image encryption/decryption using the Hill cipher (matrix multiplication + modular arithmetic over pixel data)",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/server.js",
+    "dev": "node --env-file-if-exists=.env --watch server/server.js",
+    "test": "node --test tests/hillcipher.test.js",
+    "postinstall": "node scripts/copy-vendor.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "aos": "^2.3.4",
+    "canvas-confetti": "^1.9.4",
+    "express": "^4.22.2",
+    "gsap": "^3.15.0",
+    "lenis": "^1.3.26",
+    "multer": "^2.2.0",
+    "sharp": "^0.35.4",
+    "split-type": "^0.3.4",
+    "typed.js": "^3.0.0"
+  }
+}
