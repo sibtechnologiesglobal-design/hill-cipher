@@ -1,5 +1,7 @@
 # HILL//CIPHER — Image Encryption via Linear Algebra
 
+**Live demo:** [hill-cipher-tawny.vercel.app](https://hill-cipher-tawny.vercel.app) · **Source:** [github.com/sibtechnologiesglobal-design/hill-cipher](https://github.com/sibtechnologiesglobal-design/hill-cipher)
+
 A web app that encrypts and decrypts images with the **Hill cipher**: every pair of
 pixel values is multiplied by a 2×2 key matrix and reduced mod 256. Upload an image
 and a password, download an encrypted `.enc` file; upload the `.enc` with the same
