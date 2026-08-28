@@ -23,6 +23,7 @@
     "typed.js": "^3.0.0"
   },
   "devDependencies": {
+    "docx": "^9.7.1",
     "vercel": "^59.9.1"
   }
 }
